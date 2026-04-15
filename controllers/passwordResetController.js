@@ -48,6 +48,8 @@ const forgotPassword = async (req, res) => {
     res.json({
       message: 'Password reset code sent to email',
       expiresIn: '15 minutes',
+      // Apenas para desenvolvimento - remover em produção
+      code: process.env.NODE_ENV === 'development' ? code : undefined,
     });
   } catch (error) {
     await transaction.rollback();
