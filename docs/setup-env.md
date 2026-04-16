@@ -18,8 +18,8 @@ JWT:
 - JWT_SECRET
 - JWT_EXPIRES_IN
 
-Gemini:
-- GEMINI_API_KEY
+Stability AI:
+- STABILITY_API_KEY
 
 Email SMTP:
 - EMAIL_HOST
@@ -44,7 +44,7 @@ DB_NAME=backend_db
 DB_DIALECT=mysql
 JWT_SECRET=trocar-em-producao
 JWT_EXPIRES_IN=1d
-GEMINI_API_KEY=sua-chave
+STABILITY_API_KEY=sua-chave
 EMAIL_HOST=smtp.gmail.com
 EMAIL_PORT=587
 EMAIL_USER=seu-email@gmail.com
@@ -69,4 +69,4 @@ Sem Docker:
 2. .env criado.
 3. JWT_SECRET definido.
 4. SMTP configurado para reset de senha.
-5. GEMINI_API_KEY valida para analise de imagem.
+5. STABILITY_API_KEY valida para geracao image-to-image.

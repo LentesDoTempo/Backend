@@ -28,6 +28,23 @@ const Image = sequelize.define('Image', {
     type: DataTypes.STRING,
     allowNull: false,
   },
+  generatedFileName: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    unique: true,
+  },
+  generatedFilePath: {
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
+  generatedMimeType: {
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
+  generatedSize: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+  },
   mimeType: {
     type: DataTypes.STRING,
     allowNull: false,

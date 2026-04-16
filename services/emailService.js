@@ -1,16 +1,54 @@
 const nodemailer = require('nodemailer');
 
-const transporter = nodemailer.createTransport({
-  host: process.env.EMAIL_HOST,
-  port: process.env.EMAIL_PORT,
-  secure: false,
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-});
+const requiredEnv = ['EMAIL_HOST', 'EMAIL_PORT', 'EMAIL_USER', 'EMAIL_PASS', 'EMAIL_FROM'];
+
+const getMissingEmailEnv = () => {
+  return requiredEnv.filter((key) => !process.env[key] || !String(process.env[key]).trim());
+};
+
+const escapeHtml = (value) => {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+};
+
+const createTransporter = () => {
+  const missing = getMissingEmailEnv();
+  if (missing.length) {
+    throw new Error(`Configuracao de email incompleta. Variaveis ausentes: ${missing.join(', ')}`);
+  }
+
+  const port = Number(process.env.EMAIL_PORT);
+
+  return nodemailer.createTransport({
+    host: process.env.EMAIL_HOST,
+    port,
+    secure: port === 465,
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS,
+    },
+  });
+};
+
+const verifyEmailTransport = async () => {
+  try {
+    const transporter = createTransporter();
+    await transporter.verify();
+    console.log('✓ SMTP configurado e conectado.');
+    return true;
+  } catch (error) {
+    console.error('✗ Falha ao conectar no SMTP:', error.message);
+    return false;
+  }
+};
 
 const sendPasswordResetEmail = async (email, code, userName) => {
+  const transporter = createTransporter();
+
   const mailOptions = {
     from: process.env.EMAIL_FROM,
     to: email,
@@ -65,4 +103,33 @@ const sendPasswordResetEmail = async (email, code, userName) => {
   await transporter.sendMail(mailOptions);
 };
 
-module.exports = { sendPasswordResetEmail };
+const sendServiceRequestEmail = async ({ name, institution, email, message }) => {
+  const transporter = createTransporter();
+  const safeName = escapeHtml(name);
+  const safeInstitution = escapeHtml(institution);
+  const safeEmail = escapeHtml(email);
+  const safeMessage = escapeHtml(message);
+
+  const to = process.env.CONTACT_RECEIVER_EMAIL || process.env.EMAIL_FROM || process.env.EMAIL_USER;
+
+  const mailOptions = {
+    from: process.env.EMAIL_FROM,
+    to,
+    replyTo: email,
+    subject: 'Nova solicitacao de estudo de reconstituicao',
+    html: `
+      <div style="font-family: Arial, sans-serif; line-height: 1.5; color: #222;">
+        <h2>Nova solicitacao de servico</h2>
+        <p><strong>Nome:</strong> ${safeName}</p>
+        <p><strong>Instituicao:</strong> ${safeInstitution}</p>
+        <p><strong>Email:</strong> ${safeEmail}</p>
+        <p><strong>Mensagem:</strong></p>
+        <p style="white-space: pre-wrap;">${safeMessage}</p>
+      </div>
+    `,
+  };
+
+  await transporter.sendMail(mailOptions);
+};
+
+module.exports = { sendPasswordResetEmail, sendServiceRequestEmail, verifyEmailTransport };

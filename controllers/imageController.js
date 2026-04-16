@@ -1,34 +1,49 @@
-const { GoogleGenerativeAI } = require('@google/generative-ai');
 const fs = require('fs');
+const path = require('path');
 const Image = require('../models/Image');
+const {
+  buildRevitalizationPrompt,
+  generateRevitalizedImageWithStability,
+} = require('../services/stabilityService');
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const getImageUrl = (req, fileName) => {
+  if (!fileName) {
+    return null;
+  }
 
-const analyzeImageWithGemini = async (imagePath, prompt) => {
-  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
-
-  const imageBuffer = fs.readFileSync(imagePath);
-  const base64Image = imageBuffer.toString('base64');
-  const mimeType = 'image/webp';
-
-  const result = await model.generateContent([
-    prompt || 'Descreva esta imagem em detalhes.',
-    {
-      inlineData: {
-        data: base64Image,
-        mimeType,
-      },
-    },
-  ]);
-
-  const response = await result.response;
-  return response.text();
+  const host = req.get('host');
+  return `${req.protocol}://${host}/uploads/${encodeURIComponent(fileName)}`;
 };
+
+const getRevitalizedImageFileName = (image) => image.generatedFileName || image.fileName;
+
+const extractImagePayload = (req, image) => ({
+  id: image.id,
+  originalName: image.originalName,
+  fileName: image.fileName,
+  generatedFileName: image.generatedFileName,
+  processedImageUrl: getImageUrl(req, image.fileName),
+  restoredImageUrl: getImageUrl(req, image.fileName),
+  revitalizedImageUrl: getImageUrl(req, getRevitalizedImageFileName(image)),
+  mimeType: image.mimeType,
+  generatedMimeType: image.generatedMimeType,
+  size: image.size,
+  generatedSize: image.generatedSize,
+  width: image.width,
+  height: image.height,
+  geminiAnalysis: image.geminiAnalysis,
+  status: image.status,
+  createdAt: image.createdAt,
+});
 
 const uploadImage = async (req, res) => {
   try {
-    const { prompt } = req.body;
+    const { prompt, brief, style, title } = req.body;
     const { processedImage, file } = req;
+    console.log('[uploadImage] Iniciando upload:', { title, fileName: processedImage.filename });
+
+    const analysisPrompt = buildRevitalizationPrompt({ prompt, brief, style, title });
+    console.log('[uploadImage] Prompt gerado:', analysisPrompt);
 
     const image = await Image.create({
       userId: req.user.id,
@@ -41,40 +56,58 @@ const uploadImage = async (req, res) => {
       height: processedImage.height,
       status: 'processing',
     });
+    console.log('[uploadImage] Imagem criada no DB:', image.id);
 
-    res.status(202).json({
-      message: 'Image uploaded successfully, processing started',
-      data: {
-        id: image.id,
-        status: image.status,
-      },
+    const sourceImageBuffer = await fs.promises.readFile(processedImage.path);
+    console.log('[uploadImage] Buffer lido:', sourceImageBuffer.length, 'bytes');
+
+    console.log('[uploadImage] Chamando Stability AI...');
+    const stabilityResult = await generateRevitalizedImageWithStability({
+      imageBuffer: sourceImageBuffer,
+      imageName: processedImage.filename,
+      mimeType: 'image/webp',
+      prompt,
+      brief,
+      style,
+      title,
     });
+    console.log('[uploadImage] Resposta Stability recebida:', stabilityResult.imageBuffer.length, 'bytes');
 
-    await Image.update({ status: 'processing' }, { where: { id: image.id } });
+    const generatedFileName = processedImage.filename.replace(/\.webp$/i, '-restored.png');
+    const generatedFilePath = path.join(path.dirname(processedImage.path), generatedFileName);
 
-    try {
-      const analysis = await analyzeImageWithGemini(
-        processedImage.path,
-        prompt
-      );
+    await fs.promises.writeFile(generatedFilePath, stabilityResult.imageBuffer);
+    console.log('[uploadImage] Arquivo salvo:', generatedFilePath);
 
-      await Image.update(
-        {
-          geminiAnalysis: analysis,
-          status: 'completed',
-        },
-        { where: { id: image.id } }
-      );
-    } catch (geminiError) {
-      console.error('Gemini API error:', geminiError);
-      await Image.update(
-        { status: 'failed' },
-        { where: { id: image.id } }
-      );
-    }
+    await Image.update(
+      {
+        generatedFileName,
+        generatedFilePath,
+        generatedMimeType: stabilityResult.mimeType,
+        generatedSize: stabilityResult.imageBuffer.length,
+        geminiAnalysis: analysisPrompt,
+        status: 'completed',
+      },
+      { where: { id: image.id } }
+    );
+    console.log('[uploadImage] DB atualizado com status completed');
+
+    const updatedImage = await Image.findByPk(image.id);
+    console.log('[uploadImage] Enviando resposta:', { id: updatedImage.id, status: updatedImage.status });
+
+    return res.status(200).json({
+      data: extractImagePayload(req, updatedImage),
+    });
   } catch (error) {
-    console.error('Upload error:', error);
-    res.status(500).json({ error: 'Failed to upload image' });
+    console.error('[uploadImage] ❌ ERRO:', {
+      message: error.message,
+      stack: error.stack,
+      code: error.code,
+    });
+    res.status(500).json({
+      error: error.message || 'Failed to generate image with Stability AI',
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined,
+    });
   }
 };
 
@@ -92,16 +125,7 @@ const getImage = async (req, res) => {
 
     res.json({
       data: {
-        id: image.id,
-        originalName: image.originalName,
-        fileName: image.fileName,
-        mimeType: image.mimeType,
-        size: image.size,
-        width: image.width,
-        height: image.height,
-        geminiAnalysis: image.geminiAnalysis,
-        status: image.status,
-        createdAt: image.createdAt,
+        ...extractImagePayload(req, image),
         user: image.user,
       },
     });
@@ -127,6 +151,9 @@ const listImages = async (req, res) => {
         'id',
         'originalName',
         'fileName',
+        'generatedFileName',
+        'generatedMimeType',
+        'generatedSize',
         'mimeType',
         'size',
         'width',
@@ -140,8 +167,15 @@ const listImages = async (req, res) => {
       order: [['createdAt', 'DESC']],
     });
 
+    const imagesWithUrl = rows.map((image) => {
+      const raw = image.toJSON();
+      return {
+        ...extractImagePayload(req, raw),
+      };
+    });
+
     res.json({
-      data: rows,
+      data: imagesWithUrl,
       pagination: {
         total: count,
         page: parseInt(page),
@@ -166,6 +200,10 @@ const deleteImage = async (req, res) => {
 
     if (fs.existsSync(image.filePath)) {
       await fs.promises.unlink(image.filePath);
+    }
+
+    if (image.generatedFilePath && fs.existsSync(image.generatedFilePath)) {
+      await fs.promises.unlink(image.generatedFilePath);
     }
 
     await image.destroy();

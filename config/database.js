@@ -1,21 +1,27 @@
 const { Sequelize } = require('sequelize');
 require('dotenv').config();
 
-const sequelize = new Sequelize(
-  process.env.DATABASE_URL || process.env.DB_NAME,
-  process.env.DB_USER,
-  process.env.DB_PASSWORD,
-  {
-    host: process.env.DB_HOST,
-    dialect: process.env.DB_DIALECT || 'mysql',
-    logging: false,
-    pool: {
-      max: 5,
-      min: 0,
-      acquire: 30000,
-      idle: 10000,
-    },
-  }
-);
+const baseOptions = {
+  dialect: process.env.DB_DIALECT || 'mysql',
+  logging: false,
+  pool: {
+    max: 5,
+    min: 0,
+    acquire: 30000,
+    idle: 10000,
+  },
+};
+
+const sequelize = process.env.DATABASE_URL
+  ? new Sequelize(process.env.DATABASE_URL, baseOptions)
+  : new Sequelize(
+    process.env.DB_NAME || 'backend_db',
+    process.env.DB_USER || 'root',
+    process.env.DB_PASSWORD || '',
+    {
+      ...baseOptions,
+      host: process.env.DB_HOST || 'localhost',
+    }
+  );
 
 module.exports = { sequelize };

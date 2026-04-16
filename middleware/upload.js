@@ -32,34 +32,78 @@ const upload = multer({
 const processImage = async (buffer, filename) => {
   const metadata = await sharp(buffer).metadata();
 
-  const resizedBuffer = await sharp(buffer)
-    .resize(1200, null, {
-      withoutEnlargement: true,
+  const VALID_SDXL_DIMENSIONS = [
+    { w: 1024, h: 1024 },
+    { w: 1152, h: 896 },
+    { w: 1216, h: 832 },
+    { w: 1344, h: 768 },
+    { w: 1536, h: 640 },
+    { w: 640, h: 1536 },
+    { w: 768, h: 1344 },
+    { w: 832, h: 1216 },
+    { w: 896, h: 1152 },
+  ];
+
+  const originalWidth = metadata.width || 1024;
+  const originalHeight = metadata.height || 1024;
+  const aspectRatio = originalWidth / originalHeight;
+
+  let targetDim = VALID_SDXL_DIMENSIONS[0];
+  for (const dim of VALID_SDXL_DIMENSIONS) {
+    const currentDiff = Math.abs(dim.w / dim.h - aspectRatio);
+    const bestDiff = Math.abs(targetDim.w / targetDim.h - aspectRatio);
+    if (currentDiff < bestDiff) {
+      targetDim = dim;
+    }
+  }
+
+  console.log('[processImage] Original:', originalWidth, 'x', originalHeight);
+  console.log('[processImage] Target SDXL:', targetDim.w, 'x', targetDim.h);
+
+  // Garante tamanho final EXATO permitido pelo SDXL
+  const baseBuffer = await sharp(buffer)
+    .rotate()
+    .resize(targetDim.w, targetDim.h, {
+      fit: 'cover',
+      position: 'center',
+      withoutEnlargement: false,
     })
     .webp({ quality: 85 })
     .toBuffer();
 
-  const outputPath = path.join(uploadDir, filename);
-  await fs.promises.writeFile(outputPath, resizedBuffer);
+  const restoredBuffer = await sharp(baseBuffer)
+    .normalize()
+    .linear(1.06, -3)
+    .modulate({
+      brightness: 1.05,
+      saturation: 1.08,
+    })
+    .sharpen()
+    .webp({ quality: 88 })
+    .toBuffer();
 
-  const outputMetadata = await sharp(resizedBuffer).metadata();
+  const outputPath = path.join(uploadDir, filename);
+  await fs.promises.writeFile(outputPath, restoredBuffer);
+
+  const outputMetadata = await sharp(restoredBuffer).metadata();
 
   return {
     path: outputPath,
     filename,
-    size: resizedBuffer.length,
+    size: restoredBuffer.length,
     width: outputMetadata.width,
     height: outputMetadata.height,
-    originalWidth: metadata.width,
-    originalHeight: metadata.height,
+    originalWidth,
+    originalHeight,
   };
 };
 
 const generateFilename = (originalName) => {
   const timestamp = Date.now();
   const random = crypto.randomBytes(8).toString('hex');
-  const safeName = originalName.replace(/[^a-zA-Z0-9.]/g, '_');
-  return `${timestamp}-${random}-${safeName}`;
+  const baseName = path.parse(originalName).name;
+  const safeName = baseName.replace(/[^a-zA-Z0-9]/g, '_');
+  return `${timestamp}-${random}-${safeName}.webp`;
 };
 
 const handleUpload = async (req, res, next) => {

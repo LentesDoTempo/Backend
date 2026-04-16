@@ -1,6 +1,6 @@
 # Backend API - Node.js + Express + Sequelize
 
-API RESTful com autenticação JWT, upload de imagens, análise com Google Gemini AI e recuperação de senha via email.
+API RESTful com autenticação JWT, upload de imagens, geração image-to-image com Stability AI e recuperação de senha via email.
 
 ## Estrutura do Projeto
 
@@ -18,7 +18,7 @@ backend/
 │   └── upload.js                 # Multer + Sharp (1200px WebP)
 ├── models/
 │   ├── User.js           # User model with bcrypt
-│   ├── Image.js          # Image model with Gemini analysis
+│   ├── Image.js          # Image model with generation metadata
 │   └── PasswordReset.js  # Reset codes with expiry
 ├── routes/
 │   ├── authRoutes.js           # /api/auth/*
@@ -56,8 +56,8 @@ DB_DIALECT=mysql
 JWT_SECRET=your-super-secret-jwt-key
 JWT_EXPIRES_IN=1d
 
-# Google Gemini API
-GEMINI_API_KEY=your-gemini-api-key
+# Stability AI API
+STABILITY_API_KEY=your-stability-api-key
 
 # Email (SMTP)
 EMAIL_HOST=smtp.gmail.com
@@ -69,6 +69,9 @@ EMAIL_FROM=noreply@yourapp.com
 # Server
 PORT=3000
 NODE_ENV=development
+FRONTEND_URL=http://localhost:5500
+CORS_ORIGINS=http://localhost:5500,http://127.0.0.1:5500
+DB_SYNC_ALTER=false
 
 # Upload
 MAX_FILE_SIZE=5242880
@@ -131,7 +134,7 @@ npm start
 
 | Método | Endpoint | Descrição | Auth |
 |--------|----------|-----------|------|
-| POST | `/api/images/upload` | Upload + análise Gemini | Sim |
+| POST | `/api/images/upload` | Upload + geração Stability AI (retorna image/jpeg) | Sim |
 | GET | `/api/images` | Listar imagens | Sim |
 | GET | `/api/images/:id` | Detalhes da imagem | Sim |
 | DELETE | `/api/images/:id` | Deletar imagem | Sim |
@@ -201,13 +204,16 @@ curl -X POST http://localhost:3000/api/images/upload \
 2. Configure as variáveis de ambiente:
    - `DATABASE_URL` (MySQL do Render)
    - `JWT_SECRET`
-   - `GEMINI_API_KEY`
+  - `STABILITY_API_KEY`
    - `EMAIL_HOST`, `EMAIL_USER`, `EMAIL_PASS`
+  - `FRONTEND_URL` (URL publica do frontend)
+  - `CORS_ORIGINS` (lista separada por virgula com dominios permitidos)
+  - `DB_SYNC_ALTER` (`true` apenas no deploy em que voce precisa atualizar schema; depois voltar para `false`)
    - `NODE_ENV=production`
 3. Build Command: `npm install`
 4. Start Command: `npm start`
 
 ## APIs Externas
 
-- **Google Gemini**: https://aistudio.google.com/apikey
+- **Stability AI**: https://platform.stability.ai/
 - **SMTP Gmail**: https://myaccount.google.com/apppasswords

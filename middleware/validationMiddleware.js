@@ -78,8 +78,41 @@ const validateEmail = (req, res, next) => {
   next();
 };
 
+const validateServiceRequest = (req, res, next) => {
+  const { name, institution, email, message } = req.body;
+  const errors = [];
+
+  if (!name || typeof name !== 'string' || name.trim().length < 2) {
+    errors.push('Name must be at least 2 characters');
+  }
+
+  if (!institution || typeof institution !== 'string' || institution.trim().length < 2) {
+    errors.push('Institution must be at least 2 characters');
+  }
+
+  if (!email || typeof email !== 'string') {
+    errors.push('Email is required');
+  } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    errors.push('Invalid email format');
+  }
+
+  if (!message || typeof message !== 'string' || message.trim().length < 10) {
+    errors.push('Message must be at least 10 characters');
+  }
+
+  if (errors.length > 0) {
+    return res.status(400).json({
+      error: 'Validation failed',
+      details: errors,
+    });
+  }
+
+  next();
+};
+
 module.exports = {
   validateRegister,
   validateLogin,
   validateEmail,
+  validateServiceRequest,
 };
